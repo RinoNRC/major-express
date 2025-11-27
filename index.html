@@ -715,10 +715,18 @@
                 bases.push(trans);
             }
 
-            // 3. Обработка корпусов/строений (к1 -> корпус 1, с2 -> строение 2)
-            // OSM часто любит полные названия или специфичные сокращения
+            // 3. Обработка корпусов/строений
+            // Expand "к" -> "корпус"
             if (/(\d+)\s*к(орп)?\.?\s*(\d+)/i.test(normalized)) {
                 bases.push(normalized.replace(/(\d+)\s*к(орп)?\.?\s*(\d+)/i, '$1 корпус $3'));
+            }
+            // Expand "с" -> "строение"
+            if (/(\d+)\s*с(тр)?\.?\s*(\d+)/i.test(normalized)) {
+                bases.push(normalized.replace(/(\d+)\s*с(тр)?\.?\s*(\d+)/i, '$1 строение $3'));
+            }
+            // Expand both if present (e.g. 61к4с5 -> 61 корпус 4 строение 5)
+            if (/(\d+)\s*к\s*(\d+)\s*с\s*(\d+)/i.test(normalized)) {
+                bases.push(normalized.replace(/(\d+)\s*к\s*(\d+)\s*с\s*(\d+)/i, '$1 корпус $2 строение $3'));
             }
 
             // Генерируем полные запросы для всех баз
@@ -911,17 +919,42 @@
 
         function replaceNumberWords(text) {
             let processed = text.toLowerCase();
+            
+            // 1. Number words to digits
             for (const [word, num] of Object.entries(NUMBER_WORDS)) {
                 const regex = new RegExp(`(^|\\s)${word}(?=$|[\\s.,])`, 'gi');
                 processed = processed.replace(regex, `$1${num}`);
             }
-            // Fix double numbers like "двадцать пять" -> "20 5" -> "25"
+            
+            // 2. Combine compound numbers (twenty five -> 25)
             processed = processed.replace(/(\d+)\s+(\d+)/g, (match, n1, n2) => {
                 if (['20','30','40','50','60','70','80','90'].includes(n1) && n2.length === 1) {
                     return parseInt(n1) + parseInt(n2);
                 }
                 return match;
             });
+
+            // 3. Address abbreviations
+            // Remove "дом"
+            processed = processed.replace(/(\s|^)дом\s*(\d+)/gi, '$1$2');
+            
+            // Replace "корпус", "строение" with "к" and "с"
+            processed = processed.replace(/(\s|^)корпус(\s|$)/gi, '$1к$2');
+            processed = processed.replace(/(\s|^)корп(\.?\s|$)/gi, '$1к$2');
+            processed = processed.replace(/(\s|^)строение(\s|$)/gi, '$1с$2');
+            processed = processed.replace(/(\s|^)стр(\.?\s|$)/gi, '$1с$2');
+            
+            // Collapse spaces between number and k/s (e.g. "14 к 4" -> "14к4")
+            // Handle house number + corpus
+            processed = processed.replace(/(\d+)\s*к\s*(\d+)/gi, '$1к$2');
+            // Handle corpus + structure (e.g. "14к4 с 5" -> "14к4с5")
+            processed = processed.replace(/(\d+)\s*с\s*(\d+)/gi, '$1с$2');
+            // Handle "14 строение 5" directly (which became "14 с 5")
+            processed = processed.replace(/(\d+)\s*с(тр)?\s*(\d+)/gi, '$1с$3');
+
+            // Clean up double spaces
+            processed = processed.replace(/\s+/g, ' ').trim();
+
             return processed;
         }
 
