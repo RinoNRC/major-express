@@ -108,19 +108,26 @@
 <body class="bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 min-h-screen">
     <div class="container mx-auto px-4 py-6">
         <!-- Header -->
-        <header class="text-center mb-8 relative">
-            <div class="inline-flex items-center gap-3 bg-white/10 backdrop-blur-sm px-6 py-3 rounded-2xl">
-                <div class="w-12 h-12 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl flex items-center justify-center">
-                    <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <header class="text-center mb-6 relative px-2">
+            <div class="inline-flex items-center gap-3 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-xl max-w-full">
+                <div class="w-10 h-10 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg flex-shrink-0 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0"></path>
                     </svg>
                 </div>
-                <div class="text-left">
-                    <h1 class="text-2xl font-bold text-white">Major Express</h1>
-                    <p class="text-blue-300 text-sm">Оптимизация маршрута доставки</p>
+                <div class="text-left min-w-0">
+                    <h1 class="text-lg font-bold text-white leading-tight truncate">Major Express</h1>
+                    <p class="text-blue-300 text-xs truncate">Оптимизация маршрута</p>
                 </div>
             </div>
             
+            <!-- Help Button -->
+            <button onclick="toggleHelpModal()" class="absolute left-0 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white p-3 rounded-xl transition-colors" title="Справка">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </button>
+
             <!-- History Button -->
             <button onclick="toggleHistoryModal()" class="absolute right-0 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white p-3 rounded-xl transition-colors" title="История адресов">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -364,6 +371,45 @@
         </div>
     </div>
 
+    <!-- Help Modal -->
+    <div id="helpModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-800 rounded-2xl w-full max-w-md flex flex-col shadow-2xl border border-white/10 max-h-[85vh]">
+            <div class="p-5 border-b border-white/10 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-white">Как пользоваться</h2>
+                <button onclick="toggleHelpModal()" class="text-white/50 hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-5 overflow-y-auto text-white space-y-4">
+                <div>
+                    <h3 class="text-orange-400 font-bold mb-1">🎤 Голосовой ввод</h3>
+                    <p class="text-sm text-white/70">Нажмите красную кнопку и говорите: <br><i>"Ленина 5 <b>к 14:30</b>"</i>. Время распознается автоматически.</p>
+                </div>
+                <div>
+                    <h3 class="text-blue-400 font-bold mb-1">📱 Установка на телефон</h3>
+                    <p class="text-sm text-white/70"><b>iPhone:</b> Нажмите "Поделиться" -> "На экран Домой".<br><b>Android:</b> Меню (3 точки) -> "Установить приложение".</p>
+                </div>
+                <div>
+                    <h3 class="text-green-400 font-bold mb-1">🚚 Маршрут</h3>
+                    <p class="text-sm text-white/70">Система сама строит маршрут. Если порядок не нравится — просто <b>перетащите</b> адрес в списке пальцем!</p>
+                </div>
+                <div>
+                    <h3 class="text-purple-400 font-bold mb-1">✅ В работе</h3>
+                    <ul class="list-disc list-inside text-sm text-white/70 ml-1">
+                        <li>Жмите галочку (номер), когда отдали заказ.</li>
+                        <li>Пишите коды/этажи в поле "Заметки".</li>
+                        <li>Смотрите историю поездок через кнопку 🕒.</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="p-4 border-t border-white/10 bg-white/5 rounded-b-2xl">
+                <button onclick="toggleHelpModal()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition-colors">
+                    Понятно!
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div id="toastContainer" class="fixed top-24 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
@@ -435,6 +481,11 @@
                 h.date !== today
             );
             return found ? found.date : null;
+        }
+
+        function toggleHelpModal() {
+            const modal = document.getElementById('helpModal');
+            modal.classList.toggle('hidden');
         }
 
         function toggleHistoryModal() {
@@ -838,6 +889,40 @@
             } else {
                 showToast('Не удалось найти адрес', 'warning');
             }
+        }
+
+        // Dictionary for number words
+        const NUMBER_WORDS = {
+            'один': 1, 'одна': 1, 'одно': 1, 'первый': 1, '1-й': 1,
+            'два': 2, 'две': 2, 'второй': 2, '2-й': 2,
+            'три': 3, 'третий': 3, '3-й': 3,
+            'четыре': 4, 'четвертый': 4, '4-й': 4,
+            'пять': 5, 'пятый': 5, '5-й': 5,
+            'шесть': 6, 'шестой': 6, '6-й': 6,
+            'семь': 7, 'седьмой': 7, '7-й': 7,
+            'восемь': 8, 'восьмой': 8, '8-й': 8,
+            'девять': 9, 'девятый': 9, '9-й': 9,
+            'десять': 10, 'десятый': 10,
+            'одиннадцать': 11, 'двенадцать': 12, 'тринадцать': 13, 'четырнадцать': 14, 'пятнадцать': 15,
+            'шестнадцать': 16, 'семнадцать': 17, 'восемнадцать': 18, 'девятнадцать': 19,
+            'двадцать': 20, 'тридцать': 30, 'сорок': 40, 'пятьдесят': 50, 'шестьдесят': 60, 'семьдесят': 70, 'восемьдесят': 80, 'девяносто': 90,
+            'сто': 100
+        };
+
+        function replaceNumberWords(text) {
+            let processed = text.toLowerCase();
+            for (const [word, num] of Object.entries(NUMBER_WORDS)) {
+                const regex = new RegExp(`(^|\\s)${word}(?=$|[\\s.,])`, 'gi');
+                processed = processed.replace(regex, `$1${num}`);
+            }
+            // Fix double numbers like "двадцать пять" -> "20 5" -> "25"
+            processed = processed.replace(/(\d+)\s+(\d+)/g, (match, n1, n2) => {
+                if (['20','30','40','50','60','70','80','90'].includes(n1) && n2.length === 1) {
+                    return parseInt(n1) + parseInt(n2);
+                }
+                return match;
+            });
+            return processed;
         }
 
         function extractTimeFromSpeech(text) {
@@ -1551,8 +1636,11 @@
         async function processVoiceAddress(rawText) {
             if (!rawText || rawText.length < 3) return;
 
-            // Extract time
-            const { time, address: cleanAddress } = extractTimeFromSpeech(rawText);
+            // 1. Convert number words to digits (Fix for "корпус четыре")
+            let textWithDigits = replaceNumberWords(rawText);
+
+            // 2. Extract time
+            const { time, address: cleanAddress } = extractTimeFromSpeech(textWithDigits);
             
             // Clean up the address
             let address = cleanAddress.charAt(0).toUpperCase() + cleanAddress.slice(1);
