@@ -177,7 +177,7 @@
                         </div>
                     </button>
                     <div id="voiceStatus" class="mt-3 text-center text-white/70 text-sm">
-                        Говорите адреса один за другим — они добавятся автоматически
+                        Нажмите, скажите адрес — поиск начнется автоматически
                     </div>
                     <div id="recognizedText" class="mt-3 bg-white/10 rounded-xl px-4 py-3 text-white hidden">
                         <span class="text-white/50 text-sm">Распознано: </span>
@@ -1592,6 +1592,13 @@
                     recognizedDiv.classList.remove('hidden');
                     recognizedSpan.textContent = finalTranscript;
                     recognizedSpan.classList.remove('text-white/50');
+                    
+                    // Stop recording immediately to avoid noise
+                    if (isRecording) {
+                        isRecording = false;
+                        recognition.stop();
+                        updateVoiceUI(false);
+                    }
                     
                     // Process the recognized address
                     await processVoiceAddress(finalTranscript.trim());
