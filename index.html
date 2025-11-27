@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Major Express - Оптимизация маршрута</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="manifest" href='data:application/json;charset=utf-8,{"name":"Major Express","short_name":"MajorExp","start_url":".","display":"standalone","background_color":"#0f172a","theme_color":"#0f172a","icons":[{"src":"https://cdn-icons-png.flaticon.com/512/2830/2830305.png","sizes":"512x512","type":"image/png"}]}'>
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2830/2830305.png">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        #map { height: 500px; width: 100%; border-radius: 12px; }
+        .drag-handle { cursor: grab; }
+        .drag-handle:active { cursor: grabbing; }
+        .address-item { transition: all 0.2s ease; }
+        .address-item:hover { transform: translateX(5px); }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .recording { 
+            animation: recording-pulse 1s infinite; 
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+        }
+        @keyframes recording-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .voice-wave {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            height: 20px;
+        }
+        .voice-wave span {
+            width: 3px;
+            background: white;
+            border-radius: 2px;
+            animation: wave 0.5s infinite ease-in-out;
+        }
+        .voice-wave span:nth-child(1) { animation-delay: 0s; height: 8px; }
+        .voice-wave span:nth-child(2) { animation-delay: 0.1s; height: 16px; }
+        .voice-wave span:nth-child(3) { animation-delay: 0.2s; height: 12px; }
+        .voice-wave span:nth-child(4) { animation-delay: 0.3s; height: 18px; }
+        .voice-wave span:nth-child(5) { animation-delay: 0.4s; height: 10px; }
+        @keyframes wave {
+            0%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(0.5); }
+        }
+        
+        /* Toast Notifications */
+        .toast-enter { transform: translateX(100%); opacity: 0; }
+        .toast-enter-active { transform: translateX(0); opacity: 1; transition: all 0.3s ease-out; }
+        .toast-exit { transform: translateX(0); opacity: 1; }
+        .toast-exit-active { transform: translateX(100%); opacity: 0; transition: all 0.3s ease-in; }
+        
+        /* Completed Item */
+        .address-completed {
+            opacity: 0.6;
+            background: rgba(255, 255, 255, 0.02) !important;
+        }
+        .address-completed .text-white {
+            text-decoration: line-through;
+            color: rgba(255, 255, 255, 0.5);
+        }
+        .notes-input {
+            transition: all 0.2s;
+        }
+        .notes-input:focus {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        /* History Markers */
+        .history-marker-icon {
+            background: #64748b;
+            border: 2px solid white;
+            border-radius: 50%;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            opacity: 0.7;
+            transition: all 0.2s;
+        }
+        .history-marker-icon:hover {
+            background: #f97316;
+            transform: scale(1.2);
+            opacity: 1;
+            z-index: 1000;
+            cursor: pointer;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.1); }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.5); }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 min-h-screen">
+    <div class="container mx-auto px-4 py-6">
+        <!-- Header -->
+        <header class="text-center mb-8 relative">
+            <div class="inline-flex items-center gap-3 bg-white/10 backdrop-blur-sm px-6 py-3 rounded-2xl">
+                <div class="w-12 h-12 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl flex items-center justify-center">
+                    <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0"></path>
+                    </svg>
+                </div>
+                <div class="text-left">
+                    <h1 class="text-2xl font-bold text-white">Major Express</h1>
+                    <p class="text-blue-300 text-sm">Оптимизация маршрута доставки</p>
+                </div>
+            </div>
+            
+            <!-- History Button -->
+            <button onclick="toggleHistoryModal()" class="absolute right-0 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white p-3 rounded-xl transition-colors" title="История адресов">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </button>
+        </header>
+
+        <div class="grid lg:grid-cols-2 gap-6">
+            <!-- Left Panel - Address Input -->
+            <div class="space-y-6">
+                <!-- Start Point -->
+                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-5">
+                    <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <span class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm font-bold">А</span>
+                        Начальная точка
+                    </h2>
+                    <div class="flex gap-2">
+                        <input type="text" id="startAddress" placeholder="Откуда начинаете маршрут..." 
+                            class="flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        <button onclick="setStartPoint()" class="bg-green-500 hover:bg-green-600 text-white px-5 py-3 rounded-xl font-medium transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="startPointDisplay" class="mt-3 text-green-400 text-sm hidden"></div>
+                </div>
+
+                <!-- Voice Input - Big Button -->
+                <div class="bg-gradient-to-r from-red-500/20 to-orange-500/20 backdrop-blur-sm rounded-2xl p-5 border border-red-500/30">
+                    <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                        </svg>
+                        Голосовой ввод адресов
+                    </h2>
+                    <button onclick="toggleVoiceRecording()" id="voiceBtn" 
+                        class="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white py-6 rounded-2xl font-bold text-xl transition-all transform hover:scale-[1.02] shadow-lg flex items-center justify-center gap-3">
+                        <svg id="micIcon" class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                        </svg>
+                        <span id="voiceBtnText">Нажмите и говорите адрес</span>
+                        <div id="voiceWave" class="voice-wave hidden">
+                            <span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                    </button>
+                    <div id="voiceStatus" class="mt-3 text-center text-white/70 text-sm">
+                        Говорите адреса один за другим — они добавятся автоматически
+                    </div>
+                    <div id="recognizedText" class="mt-3 bg-white/10 rounded-xl px-4 py-3 text-white hidden">
+                        <span class="text-white/50 text-sm">Распознано: </span>
+                        <span id="recognizedAddress" class="font-medium"></span>
+                    </div>
+                </div>
+
+                <!-- Add Addresses -->
+                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-5">
+                    <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <svg class="w-6 h-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        Или введите вручную
+                    </h2>
+                    <div class="flex gap-2 mb-3">
+                        <div class="flex-1 flex gap-2 bg-white/10 border border-white/20 rounded-xl p-1 focus-within:ring-2 focus-within:ring-orange-500 transition-all">
+                            <input type="text" id="addressInput" placeholder="Адрес (например: Тверская 15)" 
+                                class="flex-1 bg-transparent border-none text-white placeholder-white/50 px-3 py-2 focus:outline-none focus:ring-0"
+                                onkeypress="if(event.key==='Enter') addAddress()">
+                            <div class="w-px bg-white/20 my-1"></div>
+                            <input type="time" id="timeInput" 
+                                class="bg-transparent border-none text-white/80 text-sm px-2 py-2 focus:outline-none focus:ring-0 cursor-pointer"
+                                title="Время доставки (необязательно)">
+                        </div>
+                        <button onclick="addAddress()" class="bg-orange-500 hover:bg-orange-600 text-white px-5 py-3 rounded-xl font-medium transition-colors shadow-lg">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        </button>
+                    </div>
+                    <div class="flex gap-2">
+                        <textarea id="bulkAddresses" placeholder="Или вставьте несколько адресов (каждый с новой строки)..." 
+                            class="flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-orange-500 h-24 resize-none"></textarea>
+                        <button onclick="addBulkAddresses()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-3 rounded-xl font-medium transition-colors text-sm">
+                            Добавить<br>все
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Statistics -->
+                <div class="bg-gradient-to-r from-blue-600/20 to-purple-600/20 backdrop-blur-sm rounded-2xl p-5 border border-blue-500/20 mb-6" id="statsPanel">
+                    <div class="flex justify-between items-end mb-2">
+                        <div>
+                            <p class="text-blue-300 text-xs font-bold uppercase tracking-wider">Прогресс дня</p>
+                            <div class="flex items-baseline gap-2">
+                                <span class="text-3xl font-bold text-white" id="statCompleted">0</span>
+                                <span class="text-white/50 text-sm">из <span id="statTotal">0</span></span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-white text-sm" id="statPercent">0%</p>
+                        </div>
+                    </div>
+                    <div class="w-full bg-black/30 h-2 rounded-full overflow-hidden">
+                        <div id="statBar" class="bg-gradient-to-r from-blue-500 to-purple-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-white/10">
+                        <div class="text-center">
+                            <p class="text-white/40 text-xs">Осталось</p>
+                            <p class="text-white font-bold" id="statRemaining">0</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-white/40 text-xs">Маршрут</p>
+                            <p class="text-white font-bold" id="statDistance">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Address List -->
+                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-white flex items-center gap-2">
+                            <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                            </svg>
+                            Адреса (<span id="addressCount">0</span>)
+                        </h2>
+                        <button onclick="clearAllAddresses()" class="text-red-400 hover:text-red-300 text-sm transition-colors">
+                            Очистить всё
+                        </button>
+                    </div>
+                    <div id="addressList" class="space-y-2 max-h-64 overflow-y-auto pr-2">
+                        <p class="text-white/50 text-center py-4">Адреса пока не добавлены</p>
+                    </div>
+                </div>
+
+                <!-- Optimize Button -->
+                <button onclick="optimizeRoute()" id="optimizeBtn" 
+                    class="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white py-4 rounded-2xl font-bold text-lg transition-all transform hover:scale-[1.02] shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
+                    <span class="flex items-center justify-center gap-2">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                        </svg>
+                        Построить оптимальный маршрут
+                    </span>
+                </button>
+
+                <!-- Export Buttons -->
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="openInYandexMaps()" class="bg-yellow-500 hover:bg-yellow-600 text-black py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                        </svg>
+                        Яндекс Карты
+                    </button>
+                    <button onclick="openInGoogleMaps()" class="bg-white hover:bg-gray-100 text-gray-800 py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                        </svg>
+                        Google Maps
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Panel - Map & Route -->
+            <div class="space-y-6">
+                <!-- Map -->
+                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-5 relative">
+                    <button id="clearHistoryBtn" onclick="clearHistoryPreview()" class="absolute top-20 right-7 z-[400] bg-white text-slate-800 px-4 py-2 rounded-xl shadow-lg text-sm font-bold hidden hover:bg-gray-100 transition-colors border-2 border-slate-200 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        Скрыть историю
+                    </button>
+                    <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                        </svg>
+                        Карта маршрута
+                    </h2>
+                    <div id="map" class="shadow-xl"></div>
+                </div>
+
+                <!-- Optimized Route -->
+                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-5">
+                    <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Оптимальный порядок
+                    </h2>
+                    <div id="optimizedRoute" class="space-y-2 max-h-80 overflow-y-auto pr-2">
+                        <p class="text-white/50 text-center py-4">Нажмите "Построить маршрут" для оптимизации</p>
+                    </div>
+                    <div id="routeStats" class="mt-4 pt-4 border-t border-white/10 hidden">
+                        <div class="grid grid-cols-2 gap-4 text-center">
+                            <div>
+                                <p class="text-white/50 text-sm">Общее расстояние</p>
+                                <p class="text-2xl font-bold text-white" id="totalDistance">0 км</p>
+                            </div>
+                            <div>
+                                <p class="text-white/50 text-sm">Примерное время</p>
+                                <p class="text-2xl font-bold text-white" id="totalTime">0 мин</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+            <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-8 text-center">
+                <div class="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p class="text-white text-lg" id="loadingText">Геокодирование адресов...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="historyModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-800 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl border border-white/10">
+            <div class="p-5 border-b border-white/10 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    История поездок
+                </h2>
+                <button onclick="toggleHistoryModal()" class="text-white/50 hover:text-white transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="overflow-y-auto p-5 flex-1" id="historyContent">
+                <!-- History items will be here -->
+            </div>
+            <div class="p-4 border-t border-white/10 bg-white/5 rounded-b-2xl flex justify-end">
+                <button onclick="toggleHistoryModal()" class="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl transition-colors">
+                    Закрыть
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="fixed top-24 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        // Initialize map
+        const map = L.map('map').setView([55.7558, 37.6173], 11);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        let addresses = [];
+        let startPoint = null;
+        let markers = [];
+        let routeLine = null;
+        let historyLayer = L.layerGroup().addTo(map);
+        let addressHistory = [];
+
+        // History & Toast Functions
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            let bgClass = type === 'warning' ? 'bg-orange-500' : 'bg-blue-600';
+            let icon = type === 'warning' 
+                ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+                : '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+
+            toast.className = `toast-enter flex items-center gap-3 ${bgClass} text-white px-4 py-3 rounded-xl shadow-xl backdrop-blur-sm max-w-sm`;
+            toast.innerHTML = `
+                ${icon}
+                <span class="text-sm font-medium">${message}</span>
+            `;
+
+            container.appendChild(toast);
+
+            // Animate in
+            requestAnimationFrame(() => {
+                toast.classList.remove('toast-enter');
+                toast.classList.add('toast-enter-active');
+            });
+
+            // Remove after 3s
+            setTimeout(() => {
+                toast.classList.remove('toast-enter-active');
+                toast.classList.add('toast-exit-active');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function addToHistory(addr) {
+            const today = new Date().toLocaleDateString('ru-RU');
+            const existsToday = addressHistory.find(h => h.address === addr.address && h.date === today);
+            
+            if (!existsToday) {
+                addressHistory.unshift({ 
+                    ...addr, 
+                    date: today, 
+                    timestamp: Date.now() 
+                });
+                localStorage.setItem('majorExpressHistory', JSON.stringify(addressHistory));
+            }
+        }
+
+        function checkHistory(addressText) {
+            const today = new Date().toLocaleDateString('ru-RU');
+            // Find previous visit NOT from today
+            const found = addressHistory.find(h => 
+                h.address.toLowerCase() === addressText.toLowerCase() && 
+                h.date !== today
+            );
+            return found ? found.date : null;
+        }
+
+        function toggleHistoryModal() {
+            const modal = document.getElementById('historyModal');
+            if (modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+                renderHistory();
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        function renderHistory() {
+            const container = document.getElementById('historyContent');
+            if (addressHistory.length === 0) {
+                container.innerHTML = '<p class="text-white/50 text-center">История пуста</p>';
+                return;
+            }
+
+            // Group by date
+            const grouped = {};
+            addressHistory.forEach(item => {
+                if (!grouped[item.date]) grouped[item.date] = [];
+                grouped[item.date].push(item);
+            });
+
+            container.innerHTML = Object.keys(grouped).map(date => `
+                <div class="mb-6">
+                    <div class="sticky top-0 bg-slate-800 py-2 border-b border-white/5 flex justify-between items-center mb-3 z-10">
+                        <h3 class="text-blue-300 font-bold">${date}</h3>
+                        <div class="flex gap-2">
+                            <button onclick="previewHistoryOnMap('${date}')" class="text-xs bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded transition-colors flex items-center gap-1" title="Показать на карте">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                                На карте
+                            </button>
+                            <button onclick="addAllFromDate('${date}')" class="text-xs bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 px-2 py-1 rounded transition-colors flex items-center gap-1" title="Добавить все в текущий маршрут">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                Все в маршрут
+                            </button>
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        ${grouped[date].map(item => `
+                            <div class="bg-white/5 rounded-lg px-3 py-2 flex items-center justify-between group hover:bg-white/10 transition-colors">
+                                <div>
+                                    <span class="text-white text-sm block">${item.address}</span>
+                                    <span class="text-white/30 text-xs">
+                                        ${new Date(item.timestamp).toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'})}
+                                    </span>
+                                </div>
+                                <button onclick='addHistoryToRoute(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="bg-green-500/20 hover:bg-green-500 hover:text-white text-green-400 p-1.5 rounded-lg transition-all opacity-0 group-hover:opacity-100" title="Добавить в маршрут">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addHistoryToRoute(item) {
+            if (addresses.find(a => a.address.toLowerCase() === item.address.toLowerCase())) {
+                showToast('Адрес уже в маршруте', 'warning');
+                return;
+            }
+            const newAddr = { ...item, id: Date.now() };
+            addresses.push(newAddr);
+            updateAddressList();
+            updateMap();
+            saveData();
+            showToast('Адрес добавлен из истории', 'success');
+            if (historyLayer) {
+                historyLayer.eachLayer(layer => {
+                    if (layer.getPopup().getContent().includes(item.address)) {
+                        map.removeLayer(layer);
+                    }
+                });
+            }
+        }
+
+        function addAllFromDate(date) {
+            const items = addressHistory.filter(h => h.date === date);
+            let addedCount = 0;
+            items.forEach((item, i) => {
+                if (!addresses.find(a => a.address.toLowerCase() === item.address.toLowerCase())) {
+                    addresses.push({ ...item, id: Date.now() + i });
+                    addedCount++;
+                }
+            });
+            if (addedCount > 0) {
+                updateAddressList();
+                updateMap();
+                saveData();
+                showToast(`Добавлено адресов: ${addedCount}`, 'success');
+                toggleHistoryModal();
+            } else {
+                showToast('Все адреса за эту дату уже добавлены', 'info');
+            }
+        }
+
+        function previewHistoryOnMap(date) {
+            historyLayer.clearLayers();
+            const items = addressHistory.filter(h => h.date === date);
+            if (items.length === 0) return;
+            const bounds = [];
+            items.forEach(item => {
+                if (item.lat && item.lng) {
+                    const icon = L.divIcon({
+                        html: 'H',
+                        className: 'history-marker-icon',
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12]
+                    });
+                    const marker = L.marker([item.lat, item.lng], { icon: icon })
+                        .addTo(historyLayer)
+                        .bindPopup(`
+                            <div class="text-center">
+                                <div class="font-bold mb-1">${item.address}</div>
+                                <div class="text-xs text-gray-500 mb-2">${date}</div>
+                                <button onclick='addHistoryToRoute(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="bg-orange-500 text-white px-3 py-1 rounded text-xs w-full">Добавить в маршрут</button>
+                            </div>
+                        `);
+                    marker.on('click', () => marker.openPopup());
+                    bounds.push([item.lat, item.lng]);
+                }
+            });
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+            document.getElementById('clearHistoryBtn').classList.remove('hidden');
+            toggleHistoryModal();
+            showToast(`Показано ${items.length} адресов из истории`, 'info');
+        }
+
+        function clearHistoryPreview() {
+            historyLayer.clearLayers();
+            document.getElementById('clearHistoryBtn').classList.add('hidden');
+            if (markers.length > 0) {
+                const group = new L.featureGroup(markers);
+                map.fitBounds(group.getBounds(), { padding: [30, 30] });
+            }
+        }
+
+        // Load saved data
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedHistory = localStorage.getItem('majorExpressHistory');
+            if (savedHistory) {
+                addressHistory = JSON.parse(savedHistory);
+            }
+            const saved = localStorage.getItem('majorExpressAddresses');
+            if (saved) {
+                addresses = JSON.parse(saved);
+                updateAddressList();
+            }
+            const savedStart = localStorage.getItem('majorExpressStart');
+            if (savedStart) {
+                startPoint = JSON.parse(savedStart);
+                document.getElementById('startAddress').value = startPoint.address;
+                document.getElementById('startPointDisplay').textContent = `✓ ${startPoint.address}`;
+                document.getElementById('startPointDisplay').classList.remove('hidden');
+            }
+        });
+
+        function saveData() {
+            localStorage.setItem('majorExpressAddresses', JSON.stringify(addresses));
+            if (startPoint) {
+                localStorage.setItem('majorExpressStart', JSON.stringify(startPoint));
+            }
+        }
+
+        // Нормализация адреса для лучшего поиска
+        function normalizeAddress(address) {
+            let normalized = address.trim();
+            
+            // Приводим к нижнему регистру для обработки
+            let lower = normalized.toLowerCase();
+            
+            // Убираем лишние слова
+            lower = lower.replace(/^(улица|ул\.?|проспект|пр\.?|пр-т|переулок|пер\.?|бульвар|б-р|бул\.?|шоссе|ш\.?|проезд|пр-д|набережная|наб\.?|площадь|пл\.?)\s+/i, '');
+            
+            // Типичные замены для голосового ввода
+            const replacements = {
+                'дом ': 'д.',
+                'корпус ': 'к.',
+                'строение ': 'стр.',
+                'квартира ': 'кв.',
+                ' тире ': '-',
+                ' дробь ': '/',
+            };
+            
+            for (const [from, to] of Object.entries(replacements)) {
+                lower = lower.replace(new RegExp(from, 'gi'), to);
+            }
+            
+            // Первая буква заглавная
+            normalized = lower.charAt(0).toUpperCase() + lower.slice(1);
+            
+            return normalized;
+        }
+
+        // Умная генерация вариантов адреса для сложной нумерации (14Д, 14к1 и т.д.)
+        function generateAddressVariants(address) {
+            const variants = [];
+            const normalized = normalizeAddress(address); // Базовая очистка
+            
+            // Хелпер для транслитерации буквы дома (14Д -> 14D)
+            // OSM часто хранит индексы латиницей
+            function transliterateHouseLetter(str) {
+                const map = {'а':'a', 'б':'b', 'в':'v', 'г':'g', 'д':'d', 'е':'e', 'ж':'zh', 'з':'z', 'и':'i', 'к':'k', 'л':'l', 'м':'m', 'н':'n', 'о':'o', 'п':'p', 'р':'r', 'с':'s', 'т':'t', 'у':'u', 'ф':'f', 'х':'h', 'ц':'c', 'ч':'ch', 'ш':'sh', 'щ':'shch', 'э':'e', 'ю':'yu', 'я':'ya'};
+                return str.replace(/(\d+)([а-я])/ig, (match, num, letter) => {
+                    const lat = map[letter.toLowerCase()];
+                    return lat ? `${num}${lat.toUpperCase()}` : match;
+                });
+            }
+
+            // Базовые варианты
+            const bases = [normalized];
+
+            // 1. Если есть слитая буква (14Д), пробуем добавить пробел (14 Д)
+            if (/(\d+)([а-яА-Я])/i.test(normalized)) {
+                bases.push(normalized.replace(/(\d+)([а-яА-Я])/i, '$1 $2'));
+            }
+
+            // 2. Пробуем транслитерацию буквы (14Д -> 14D)
+            const trans = transliterateHouseLetter(normalized);
+            if (trans !== normalized) {
+                bases.push(trans);
+            }
+
+            // 3. Обработка корпусов/строений (к1 -> корпус 1, с2 -> строение 2)
+            // OSM часто любит полные названия или специфичные сокращения
+            if (/(\d+)\s*к(орп)?\.?\s*(\d+)/i.test(normalized)) {
+                bases.push(normalized.replace(/(\d+)\s*к(орп)?\.?\s*(\d+)/i, '$1 корпус $3'));
+            }
+
+            // Генерируем полные запросы для всех баз
+            bases.forEach(base => {
+                // Приоритет: Москва
+                variants.push(`Москва, ${base}`);
+                variants.push(`Moscow, ${base}`); // Иногда на английском ищет лучше
+                
+                // Если не указан тип улицы, пробуем подставить
+                if (!/(улица|ул\.|проспект|пр\.|переулок|пер\.|бульвар|шоссе|проезд|набережная|площадь|бул\.|ш\.)/i.test(base)) {
+                    variants.push(`Москва, улица ${base}`);
+                    variants.push(`Москва, проезд ${base}`);
+                }
+            });
+            
+            // Fallback: пробуем найти хотя бы номер дома без буквы, если ничего не вышло
+            // (Добавляется в конец списка)
+            const houseMatch = normalized.match(/(.*?\d+)[а-яА-Яa-zA-Z]/i);
+            if (houseMatch) {
+                variants.push(`Москва, ${houseMatch[1]}`);
+            }
+
+            return [...new Set(variants)]; // Убираем дубликаты
+        }
+
+        async function geocodeAddress(address) {
+            const variants = generateAddressVariants(address);
+            
+            // Пробуем Nominatim с разными вариантами адреса
+            for (const variant of variants) {
+                const result = await tryNominatim(variant);
+                if (result) {
+                    console.log(`✓ Найден адрес: "${variant}"`);
+                    return result;
+                }
+                // Небольшая задержка между запросами
+                await new Promise(r => setTimeout(r, 300));
+            }
+            
+            // Если не нашли - пробуем Photon (альтернативный геокодер на основе OSM)
+            const photonResult = await tryPhoton(address);
+            if (photonResult) {
+                console.log(`✓ Найден через Photon: "${address}"`);
+                return photonResult;
+            }
+            
+            console.log(`✗ Адрес не найден: "${address}"`);
+            return null;
+        }
+
+        async function tryNominatim(fullAddress) {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullAddress)}&limit=5&addressdetails=1&countrycodes=ru`;
+            
+            try {
+                const response = await fetch(url, {
+                    headers: { 'User-Agent': 'MajorExpressRouteOptimizer/1.0' }
+                });
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    // Ищем результат в Москве
+                    const moscowResult = data.find(item => {
+                        const addr = item.address || {};
+                        return addr.city === 'Москва' || 
+                               addr.state === 'Москва' || 
+                               (item.display_name && item.display_name.includes('Москва'));
+                    });
+                    
+                    const result = moscowResult || data[0];
+                    
+                    return {
+                        lat: parseFloat(result.lat),
+                        lng: parseFloat(result.lon),
+                        displayName: result.display_name
+                    };
+                }
+                return null;
+            } catch (error) {
+                console.error('Nominatim error:', error);
+                return null;
+            }
+        }
+
+        async function tryPhoton(address) {
+            const fullAddress = `${address}, Москва, Россия`;
+            const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(fullAddress)}&limit=5&lang=ru`;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data && data.features && data.features.length > 0) {
+                    // Ищем результат в Москве
+                    const moscowResult = data.features.find(f => {
+                        const props = f.properties || {};
+                        return props.city === 'Москва' || 
+                               props.state === 'Москва' ||
+                               (props.country === 'Россия' && props.name);
+                    });
+                    
+                    const result = moscowResult || data.features[0];
+                    const coords = result.geometry.coordinates;
+                    
+                    return {
+                        lat: coords[1],
+                        lng: coords[0],
+                        displayName: result.properties.name || address
+                    };
+                }
+                return null;
+            } catch (error) {
+                console.error('Photon error:', error);
+                return null;
+            }
+        }
+
+        async function setStartPoint() {
+            const address = document.getElementById('startAddress').value.trim();
+            if (!address) return;
+
+            showLoading('Определение начальной точки...');
+            const coords = await geocodeAddress(address);
+            hideLoading();
+
+            if (coords) {
+                startPoint = { address, ...coords };
+                document.getElementById('startPointDisplay').textContent = `✓ ${address}`;
+                document.getElementById('startPointDisplay').classList.remove('hidden');
+                saveData();
+                updateMap();
+            } else {
+                alert('Не удалось найти адрес. Попробуйте уточнить.');
+            }
+        }
+
+        async function addAddress() {
+            const input = document.getElementById('addressInput');
+            const timeInput = document.getElementById('timeInput');
+            const address = input.value.trim();
+            const time = timeInput.value; // Get time value
+            
+            if (!address) return;
+
+            if (addresses.find(a => a.address.toLowerCase() === address.toLowerCase())) {
+                showToast('Этот адрес уже есть в маршруте', 'warning');
+                return;
+            }
+
+            showLoading('Поиск адреса...');
+            const coords = await geocodeAddress(address);
+            hideLoading();
+
+            if (coords) {
+                const lastVisit = checkHistory(address);
+                if (lastVisit) {
+                    showToast(`Вы были здесь ${lastVisit}`, 'info');
+                }
+
+                const newAddr = { address, ...coords, time, id: Date.now() }; // Save time
+                addresses.push(newAddr);
+                addToHistory(newAddr);
+                
+                input.value = '';
+                timeInput.value = ''; // Clear time input
+                updateAddressList();
+                updateMap();
+                saveData();
+            } else {
+                showToast('Не удалось найти адрес', 'warning');
+            }
+        }
+
+        function extractTimeFromSpeech(text) {
+            // Match "к 15:30", "в 12", "до 14 00" etc.
+            const timeRegex = /(?:к|в|до|на)\s+(\d{1,2})(?:[:\s](\d{2}))?(?:\s*ч(?:асов)?)?/i;
+            const match = text.match(timeRegex);
+            
+            if (match) {
+                let hours = parseInt(match[1]);
+                let minutes = match[2] ? parseInt(match[2]) : 0;
+                
+                // Basic validation
+                if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+                    // Format as HH:MM
+                    const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                    
+                    // Remove the time part from the address string
+                    const cleanAddress = text.replace(match[0], '').trim();
+                    return { time: timeStr, address: cleanAddress };
+                }
+            }
+            return { time: null, address: text };
+        }
+
+        async function addBulkAddresses() {
+            const textarea = document.getElementById('bulkAddresses');
+            const lines = textarea.value.split('\n').map(l => l.trim()).filter(l => l);
+            
+            if (lines.length === 0) return;
+
+            showLoading(`Обработка адресов: 0/${lines.length}`);
+            
+            for (let i = 0; i < lines.length; i++) {
+                document.getElementById('loadingText').textContent = `Обработка адресов: ${i + 1}/${lines.length}`;
+                
+                const address = lines[i];
+                if (addresses.find(a => a.address.toLowerCase() === address.toLowerCase())) {
+                    continue;
+                }
+
+                const coords = await geocodeAddress(address);
+                if (coords) {
+                    const lastVisit = checkHistory(address);
+                    if (lastVisit) {
+                        // Delay toasts slightly so they don't stack instantly
+                        setTimeout(() => showToast(`Вы были здесь ${lastVisit} (${address})`, 'info'), i * 500);
+                    }
+
+                    const newAddr = { address, ...coords, id: Date.now() + i };
+                    addresses.push(newAddr);
+                    addToHistory(newAddr);
+                }
+                
+                // Small delay to avoid rate limiting
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
+            hideLoading();
+            textarea.value = '';
+            updateAddressList();
+            updateMap();
+            saveData();
+        }
+
+        function removeAddress(id) {
+            addresses = addresses.filter(a => a.id !== id);
+            updateAddressList();
+            updateMap();
+            saveData();
+        }
+
+        function clearAllAddresses() {
+            if (confirm('Удалить все адреса?')) {
+                addresses = [];
+                updateAddressList();
+                updateMap();
+                saveData();
+            }
+        }
+
+        function updateAddressTime(id, newTime) {
+            const addr = addresses.find(a => a.id === id);
+            if (addr) {
+                addr.time = newTime;
+                saveData();
+                updateMap();
+            }
+        }
+
+        function toggleAddressStatus(id) {
+            const addr = addresses.find(a => a.id === id);
+            if (addr) {
+                addr.completed = !addr.completed;
+                saveData();
+                updateAddressList();
+                updateMap();
+            }
+        }
+
+        function updateAddressNotes(id, notes) {
+            const addr = addresses.find(a => a.id === id);
+            if (addr) {
+                addr.notes = notes;
+                saveData();
+            }
+        }
+
+        function updateStats() {
+            const total = addresses.length;
+            const completed = addresses.filter(a => a.completed).length;
+            const remaining = total - completed;
+            const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+
+            const statCompleted = document.getElementById('statCompleted');
+            const statTotal = document.getElementById('statTotal');
+            const statRemaining = document.getElementById('statRemaining');
+            const statPercent = document.getElementById('statPercent');
+            const statBar = document.getElementById('statBar');
+            const statDistance = document.getElementById('statDistance');
+
+            if (statCompleted) statCompleted.textContent = completed;
+            if (statTotal) statTotal.textContent = total;
+            if (statRemaining) statRemaining.textContent = remaining;
+            if (statPercent) statPercent.textContent = `${percent}%`;
+            if (statBar) statBar.style.width = `${percent}%`;
+            
+            // Update distance if element exists
+            const distElem = document.getElementById('totalDistance');
+            if (statDistance && distElem) {
+                statDistance.textContent = distElem.textContent || '0 км';
+            }
+        }
+
+        function updateAddressList() {
+            updateStats();
+            const list = document.getElementById('addressList');
+            document.getElementById('addressCount').textContent = addresses.length;
+
+            if (addresses.length === 0) {
+                list.innerHTML = '<p class="text-white/50 text-center py-4">Адреса пока не добавлены</p>';
+                return;
+            }
+
+            list.innerHTML = addresses.map((addr, index) => `
+                <div class="address-item flex flex-col gap-2 bg-white/5 rounded-xl px-4 py-3 cursor-move hover:bg-white/10 ${addr.completed ? 'address-completed' : ''}" 
+                     draggable="true" data-id="${addr.id}">
+                    <div class="flex items-start gap-3">
+                        <div class="drag-handle text-white/30 hover:text-white cursor-grab active:cursor-grabbing p-1 pt-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path></svg>
+                        </div>
+                        
+                        <button onclick="toggleAddressStatus(${addr.id})" class="flex-shrink-0 w-7 h-7 ${addr.completed ? 'bg-green-500 hover:bg-green-600' : 'bg-blue-500 hover:bg-blue-600'} rounded-full flex items-center justify-center text-white text-sm font-bold transition-colors mt-0.5">
+                            ${addr.completed ? '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : (index + 1)}
+                        </button>
+
+                        <div class="flex-1 min-w-0">
+                            <div class="text-white text-sm truncate mb-1.5 ${addr.completed ? 'line-through text-white/50' : ''}" title="${addr.address}">${addr.address}</div>
+                            
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <div class="relative flex items-center group">
+                                    <svg class="w-3 h-3 text-white/40 absolute left-2 pointer-events-none group-focus-within:text-orange-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <input type="time" 
+                                        value="${addr.time || ''}" 
+                                        onchange="updateAddressTime(${addr.id}, this.value)"
+                                        class="bg-black/20 border border-white/10 rounded-lg pl-7 pr-1 py-1 text-xs text-white/80 focus:outline-none focus:bg-black/40 focus:border-orange-500/50 focus:text-white transition-all w-24 cursor-pointer"
+                                        title="Время прибытия">
+                                </div>
+                            </div>
+                        </div>
+
+                        <button onclick="removeAddress(${addr.id})" class="text-red-400 hover:text-red-300 flex-shrink-0 p-2 rounded-lg hover:bg-white/5 transition-colors" title="Удалить">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                    
+                    <div class="pl-10">
+                        <input type="text" 
+                            placeholder="Заметки (код, этаж, телефон...)" 
+                            value="${addr.notes || ''}"
+                            onchange="updateAddressNotes(${addr.id}, this.value)"
+                            class="notes-input w-full bg-black/10 border border-white/5 rounded-lg px-3 py-1.5 text-xs text-white/70 placeholder-white/20 focus:outline-none focus:border-blue-500/50 focus:text-white">
+                    </div>
+                </div>
+            `).join('');
+
+            // Add drag listeners
+            const items = list.querySelectorAll('.address-item');
+            items.forEach(item => {
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragover', handleDragOver);
+                item.addEventListener('drop', handleDrop);
+            });
+        }
+
+        function updateMap() {
+            // Clear existing markers and route
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+            if (routeLine) {
+                map.removeLayer(routeLine);
+                routeLine = null;
+            }
+
+            const bounds = [];
+
+            // Add start point marker
+            if (startPoint && startPoint.lat) {
+                const startIcon = L.divIcon({
+                    html: '<div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white font-bold shadow-lg border-2 border-white">А</div>',
+                    className: 'custom-marker',
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16]
+                });
+                const marker = L.marker([startPoint.lat, startPoint.lng], { icon: startIcon })
+                    .addTo(map)
+                    .bindPopup(`<b>Старт:</b> ${startPoint.address}`);
+                markers.push(marker);
+                bounds.push([startPoint.lat, startPoint.lng]);
+            }
+
+            // Add address markers
+            addresses.forEach((addr, index) => {
+                if (addr.lat && addr.lng) {
+                    const bgClass = addr.completed ? 'bg-gray-500' : 'bg-blue-500';
+                    const icon = L.divIcon({
+                        html: `<div class="w-7 h-7 ${bgClass} rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg border-2 border-white">${index + 1}</div>`,
+                        className: 'custom-marker',
+                        iconSize: [28, 28],
+                        iconAnchor: [14, 14]
+                    });
+                    const marker = L.marker([addr.lat, addr.lng], { icon: icon })
+                        .addTo(map)
+                        .bindPopup(`
+                            <b>${index + 1}.</b> ${addr.address}
+                            ${addr.time ? `<br><span class="text-green-600 font-bold">🕒 к ${addr.time}</span>` : ''}
+                            ${addr.notes ? `<br><span class="text-gray-600 text-xs">📝 ${addr.notes}</span>` : ''}
+                        `);
+                    
+                    if (addr.completed) {
+                        marker.setOpacity(0.6);
+                    }
+                    
+                    markers.push(marker);
+                    bounds.push([addr.lat, addr.lng]);
+                }
+            });
+
+            // Fit bounds
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [30, 30] });
+            }
+        }
+
+        // Calculate distance between two points (Haversine formula)
+        function calculateDistance(lat1, lng1, lat2, lng2) {
+            const R = 6371; // Earth's radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        // Helper: Convert HH:MM to minutes from midnight
+        function getMinutes(timeStr) {
+            if (!timeStr) return null;
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        // NEW Smart Algorithm: Prioritizes filling time gaps before timed events
+        function optimizeRouteAlgorithm(points, start) {
+            if (points.length === 0) return [];
+            
+            // 1. Timed points create the chronological backbone
+            let timedPoints = points.filter(p => p.time).sort((a, b) => {
+                return getMinutes(a.time) - getMinutes(b.time);
+            });
+            let untimedPoints = points.filter(p => !p.time);
+            
+            if (timedPoints.length === 0) {
+                return solveNearestNeighbor(points, start);
+            }
+
+            // Start backbone: [Start] -> [T1] -> [T2] ...
+            // The 'route' array holds the actual delivery points in order.
+            // We will insert untimed points into this array.
+            let route = [...timedPoints];
+
+            // Assume morning start at 8:00 (480 min) if no current time logic
+            const START_TIME_MINUTES = 8 * 60; 
+
+            // Greedy Insertion Strategy
+            while (untimedPoints.length > 0) {
+                let bestPointIdx = -1;
+                let bestInsertIdx = -1; 
+                let minInsertionCost = Infinity;
+
+                for (let i = 0; i < untimedPoints.length; i++) {
+                    const p = untimedPoints[i];
+                    
+                    // Try inserting 'p' into every slot 'k'
+                    // Slot k=0 is before route[0]
+                    // Slot k=N is after route[N-1]
+                    for (let k = 0; k <= route.length; k++) {
+                        let A = (k === 0) ? start : route[k-1];
+                        let B = (k === route.length) ? null : route[k];
+                        
+                        // 1. Physical Detour Cost
+                        let detour = 0;
+                        if (B) {
+                            const dAB = calculateDistance(A.lat, A.lng, B.lat, B.lng);
+                            const dAP = calculateDistance(A.lat, A.lng, p.lat, p.lng);
+                            const dPB = calculateDistance(p.lat, p.lng, B.lat, B.lng);
+                            detour = dAP + dPB - dAB;
+                        } else {
+                            detour = calculateDistance(A.lat, A.lng, p.lat, p.lng);
+                        }
+
+                        // 2. "Gap Filling" Reward
+                        // If we insert BEFORE a timed point B, we reduce the "useless wait" at B.
+                        // We want to prioritize this MASSIVELY.
+                        
+                        let gapReward = 0;
+                        if (B && B.time) {
+                            // We are inserting into a slot that ends with a fixed time commitment.
+                            // Every km we add here is effectively "free" in terms of time (up to a limit),
+                            // because we would just be waiting at B anyway.
+                            
+                            // Base reward for picking a "pre-timed" slot
+                            gapReward = 100; 
+                            
+                            // Distance heuristic: If p is relatively close to A, it's a perfect filler.
+                            const dAP = calculateDistance(A.lat, A.lng, p.lat, p.lng);
+                            if (dAP < 5) gapReward += 20; // Bonus for nearby fillers
+                        }
+
+                        // Total Cost = Detour - Reward
+                        // A high reward makes cost negative, encouraging insertion.
+                        let totalCost = detour - gapReward;
+
+                        if (totalCost < minInsertionCost) {
+                            minInsertionCost = totalCost;
+                            bestPointIdx = i;
+                            bestInsertIdx = k;
+                        }
+                    }
+                }
+
+                const pointToInsert = untimedPoints[bestPointIdx];
+                route.splice(bestInsertIdx, 0, pointToInsert);
+                untimedPoints.splice(bestPointIdx, 1);
+            }
+
+            return route;
+        }
+
+        // Drag & Drop Handlers
+        let draggedItem = null;
+
+        function handleDragStart(e) {
+            draggedItem = this;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', this.innerHTML);
+            this.classList.add('opacity-50');
+        }
+
+        function handleDragOver(e) {
+            if (e.preventDefault) e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+
+        function handleDrop(e) {
+            if (e.stopPropagation) e.stopPropagation();
+            
+            if (draggedItem !== this) {
+                // Get IDs from the elements
+                const fromId = Number(draggedItem.getAttribute('data-id'));
+                const toId = Number(this.getAttribute('data-id'));
+                
+                // Reorder array
+                const fromIndex = addresses.findIndex(a => a.id === fromId);
+                const toIndex = addresses.findIndex(a => a.id === toId);
+                
+                if (fromIndex > -1 && toIndex > -1) {
+                    const [movedItem] = addresses.splice(fromIndex, 1);
+                    addresses.splice(toIndex, 0, movedItem);
+                    
+                    saveData();
+                    updateAddressList();
+                    
+                    // Redraw route without re-optimizing (keep user order)
+                    drawRouteManually();
+                }
+            }
+            draggedItem.classList.remove('opacity-50');
+            return false;
+        }
+
+        function drawRouteManually() {
+             // Calculate total distance
+            let totalDistance = 0;
+            let prevPoint = startPoint;
+            
+            addresses.forEach(addr => {
+                totalDistance += calculateDistance(prevPoint.lat, prevPoint.lng, addr.lat, addr.lng);
+                prevPoint = addr;
+            });
+
+            if (routeLine) {
+                map.removeLayer(routeLine);
+            }
+
+            const routePoints = [
+                [startPoint.lat, startPoint.lng],
+                ...addresses.map(a => [a.lat, a.lng])
+            ];
+
+            routeLine = L.polyline(routePoints, {
+                color: '#f97316',
+                weight: 4,
+                opacity: 0.8,
+                dashArray: '10, 10'
+            }).addTo(map);
+
+            updateMap();
+
+            // Update stats
+            document.getElementById('totalDistance').textContent = `${totalDistance.toFixed(1)} км`;
+        }
+
+        function solveNearestNeighbor(points, start) {
+            const optimized = [];
+            const remaining = [...points];
+            let current = start;
+
+            while (remaining.length > 0) {
+                let nearestIndex = 0;
+                let nearestDist = Infinity;
+
+                for (let i = 0; i < remaining.length; i++) {
+                    const dist = calculateDistance(
+                        current.lat, current.lng,
+                        remaining[i].lat, remaining[i].lng
+                    );
+                    if (dist < nearestDist) {
+                        nearestDist = dist;
+                        nearestIndex = i;
+                    }
+                }
+
+                optimized.push(remaining[nearestIndex]);
+                current = remaining[nearestIndex];
+                remaining.splice(nearestIndex, 1);
+            }
+            return optimized;
+        }
+
+        async function optimizeRoute() {
+            if (addresses.length === 0) {
+                alert('Добавьте хотя бы один адрес');
+                return;
+            }
+
+            if (!startPoint) {
+                alert('Укажите начальную точку маршрута');
+                return;
+            }
+
+            showLoading('Оптимизация маршрута...');
+
+            // Small delay for UX
+            await new Promise(r => setTimeout(r, 500));
+
+            const optimizedAddresses = optimizeRouteAlgorithm(addresses, startPoint);
+            
+            // Update addresses array with optimized order
+            addresses = optimizedAddresses;
+            saveData();
+
+            // Calculate total distance
+            let totalDistance = 0;
+            let prevPoint = startPoint;
+            
+            optimizedAddresses.forEach(addr => {
+                totalDistance += calculateDistance(prevPoint.lat, prevPoint.lng, addr.lat, addr.lng);
+                prevPoint = addr;
+            });
+
+            // Draw route line
+            if (routeLine) {
+                map.removeLayer(routeLine);
+            }
+
+            const routePoints = [
+                [startPoint.lat, startPoint.lng],
+                ...optimizedAddresses.map(a => [a.lat, a.lng])
+            ];
+
+            routeLine = L.polyline(routePoints, {
+                color: '#f97316',
+                weight: 4,
+                opacity: 0.8,
+                dashArray: '10, 10'
+            }).addTo(map);
+
+            // Update markers with new order
+            updateMap();
+
+            // Update optimized route display
+            const routeDiv = document.getElementById('optimizedRoute');
+            routeDiv.innerHTML = `
+                <div class="flex items-center gap-3 bg-green-500/20 rounded-xl px-4 py-3 mb-2">
+                    <span class="w-7 h-7 bg-green-500 rounded-full flex items-center justify-center text-white text-sm font-bold">А</span>
+                    <span class="text-green-400 flex-1 text-sm">${startPoint.address}</span>
+                    <span class="text-white/50 text-xs">СТАРТ</span>
+                </div>
+                ${optimizedAddresses.map((addr, index) => `
+                    <div class="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-3">
+                        <span class="w-7 h-7 bg-orange-500 rounded-full flex items-center justify-center text-white text-sm font-bold">${index + 1}</span>
+                        <span class="text-white flex-1 text-sm truncate">${addr.address}</span>
+                    </div>
+                `).join('')}
+            `;
+
+            // Show stats
+            document.getElementById('routeStats').classList.remove('hidden');
+            document.getElementById('totalDistance').textContent = `${totalDistance.toFixed(1)} км`;
+            // Estimate time: average speed in city 20 km/h + 5 min per stop
+            const timeMinutes = Math.round((totalDistance / 20) * 60 + optimizedAddresses.length * 5);
+            const hours = Math.floor(timeMinutes / 60);
+            const mins = timeMinutes % 60;
+            document.getElementById('totalTime').textContent = hours > 0 ? `${hours}ч ${mins}м` : `${mins} мин`;
+
+            hideLoading();
+
+            // Update address list with new order
+            updateAddressList();
+        }
+
+        function openInYandexMaps() {
+            if (!startPoint || addresses.length === 0) {
+                alert('Сначала добавьте адреса и постройте маршрут');
+                return;
+            }
+
+            // Yandex Maps route URL
+            let url = 'https://yandex.ru/maps/?rtext=';
+            const points = [startPoint, ...addresses];
+            url += points.map(p => `${p.lat},${p.lng}`).join('~');
+            url += '&rtt=auto';
+            
+            window.open(url, '_blank');
+        }
+
+        function openInGoogleMaps() {
+            if (!startPoint || addresses.length === 0) {
+                alert('Сначала добавьте адреса и постройте маршрут');
+                return;
+            }
+
+            // Google Maps has a limit of waypoints, so we'll use the basic route
+            let url = 'https://www.google.com/maps/dir/';
+            const points = [startPoint, ...addresses];
+            url += points.map(p => `${p.lat},${p.lng}`).join('/');
+            
+            window.open(url, '_blank');
+        }
+
+        function showLoading(text) {
+            document.getElementById('loadingText').textContent = text;
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+
+        // ==================== VOICE RECOGNITION ====================
+        let recognition = null;
+        let isRecording = false;
+        let autoOptimizeEnabled = true;
+
+        // Initialize Speech Recognition
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            
+            if (!SpeechRecognition) {
+                document.getElementById('voiceBtn').disabled = true;
+                document.getElementById('voiceBtnText').textContent = 'Браузер не поддерживает голосовой ввод';
+                document.getElementById('voiceStatus').textContent = 'Используйте Chrome, Edge или Safari';
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.lang = 'ru-RU';
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                isRecording = true;
+                updateVoiceUI(true);
+                document.getElementById('voiceStatus').textContent = 'Слушаю... Говорите адрес';
+            };
+
+            recognition.onresult = async (event) => {
+                let interimTranscript = '';
+                let finalTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                // Show what's being recognized
+                const recognizedDiv = document.getElementById('recognizedText');
+                const recognizedSpan = document.getElementById('recognizedAddress');
+                
+                if (interimTranscript) {
+                    recognizedDiv.classList.remove('hidden');
+                    recognizedSpan.textContent = interimTranscript;
+                    recognizedSpan.classList.add('text-white/50');
+                }
+
+                if (finalTranscript) {
+                    recognizedDiv.classList.remove('hidden');
+                    recognizedSpan.textContent = finalTranscript;
+                    recognizedSpan.classList.remove('text-white/50');
+                    
+                    // Process the recognized address
+                    await processVoiceAddress(finalTranscript.trim());
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                if (event.error === 'no-speech') {
+                    document.getElementById('voiceStatus').textContent = 'Не слышу речь. Говорите громче.';
+                } else if (event.error === 'not-allowed') {
+                    document.getElementById('voiceStatus').textContent = 'Разрешите доступ к микрофону';
+                } else {
+                    document.getElementById('voiceStatus').textContent = `Ошибка: ${event.error}`;
+                }
+            };
+
+            recognition.onend = () => {
+                // Auto-restart if still recording
+                if (isRecording) {
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        isRecording = false;
+                        updateVoiceUI(false);
+                    }
+                } else {
+                    updateVoiceUI(false);
+                }
+            };
+        }
+
+        function updateVoiceUI(recording) {
+            const btn = document.getElementById('voiceBtn');
+            const text = document.getElementById('voiceBtnText');
+            const icon = document.getElementById('micIcon');
+            const wave = document.getElementById('voiceWave');
+
+            if (recording) {
+                btn.classList.add('recording');
+                btn.classList.remove('from-red-500', 'to-red-600');
+                btn.classList.add('from-red-600', 'to-red-700', 'bg-red-600');
+                text.textContent = 'Слушаю...';
+                icon.classList.add('hidden');
+                wave.classList.remove('hidden');
+            } else {
+                btn.classList.remove('recording', 'from-red-600', 'to-red-700', 'bg-red-600');
+                btn.classList.add('from-red-500', 'to-red-600');
+                text.textContent = 'Нажмите и говорите адрес';
+                icon.classList.remove('hidden');
+                wave.classList.add('hidden');
+                document.getElementById('voiceStatus').textContent = 'Говорите адреса один за другим — они добавятся автоматически';
+            }
+        }
+
+        function toggleVoiceRecording() {
+            if (!recognition) {
+                initSpeechRecognition();
+                if (!recognition) return;
+            }
+
+            if (isRecording) {
+                isRecording = false;
+                recognition.stop();
+                updateVoiceUI(false);
+            } else {
+                try {
+                    recognition.start();
+                } catch (e) {
+                    console.error('Failed to start recognition:', e);
+                }
+            }
+        }
+
+        async function processVoiceAddress(rawText) {
+            if (!rawText || rawText.length < 3) return;
+
+            // Extract time
+            const { time, address: cleanAddress } = extractTimeFromSpeech(rawText);
+            
+            // Clean up the address
+            let address = cleanAddress.charAt(0).toUpperCase() + cleanAddress.slice(1);
+            
+            // Check for duplicates
+            if (addresses.find(a => a.address.toLowerCase() === address.toLowerCase())) {
+                document.getElementById('voiceStatus').textContent = `"${address}" уже добавлен. Говорите следующий.`;
+                showToast(`"${address}" уже в списке`, 'warning');
+                return;
+            }
+
+            document.getElementById('voiceStatus').textContent = `Ищу: "${address}"...`;
+
+            const coords = await geocodeAddress(address);
+
+            if (coords) {
+                const lastVisit = checkHistory(address);
+                if (lastVisit) {
+                    showToast(`Вы были здесь ${lastVisit}`, 'info');
+                }
+
+                const newAddr = { address, ...coords, time, id: Date.now() };
+                addresses.push(newAddr);
+                addToHistory(newAddr);
+                
+                updateAddressList();
+                updateMap();
+                saveData();
+
+                // Show success
+                const timeMsg = time ? `(к ${time})` : '';
+                document.getElementById('voiceStatus').innerHTML = `
+                    <span class="text-green-400">✓ Добавлен: "${address}" ${timeMsg}</span><br>
+                    <span class="text-white/50">Говорите следующий адрес...</span>
+                `;
+
+                // Auto optimize if we have start point
+                if (autoOptimizeEnabled && startPoint && addresses.length >= 2) {
+                    autoOptimizeRoute();
+                }
+            } else {
+                document.getElementById('voiceStatus').innerHTML = `
+                    <span class="text-red-400">✗ Не найден: "${address}"</span><br>
+                    <span class="text-white/50">Попробуйте сказать точнее...</span>
+                `;
+            }
+        }
+
+        // Auto optimize without full UI update
+        async function autoOptimizeRoute() {
+            if (addresses.length < 2 || !startPoint) return;
+
+            const optimizedAddresses = optimizeRouteAlgorithm(addresses, startPoint);
+            addresses = optimizedAddresses;
+            saveData();
+
+            // Calculate total distance
+            let totalDistance = 0;
+            let prevPoint = startPoint;
+            
+            optimizedAddresses.forEach(addr => {
+                totalDistance += calculateDistance(prevPoint.lat, prevPoint.lng, addr.lat, addr.lng);
+                prevPoint = addr;
+            });
+
+            // Draw route line
+            if (routeLine) {
+                map.removeLayer(routeLine);
+            }
+
+            const routePoints = [
+                [startPoint.lat, startPoint.lng],
+                ...optimizedAddresses.map(a => [a.lat, a.lng])
+            ];
+
+            routeLine = L.polyline(routePoints, {
+                color: '#f97316',
+                weight: 4,
+                opacity: 0.8,
+                dashArray: '10, 10'
+            }).addTo(map);
+
+            // Update markers with new order
+            updateMap();
+
+            // Update optimized route display
+            const routeDiv = document.getElementById('optimizedRoute');
+            routeDiv.innerHTML = `
+                <div class="flex items-center gap-3 bg-green-500/20 rounded-xl px-4 py-3 mb-2">
+                    <span class="w-7 h-7 bg-green-500 rounded-full flex items-center justify-center text-white text-sm font-bold">А</span>
+                    <span class="text-green-400 flex-1 text-sm">${startPoint.address}</span>
+                    <span class="text-white/50 text-xs">СТАРТ</span>
+                </div>
+                ${optimizedAddresses.map((addr, index) => `
+                    <div class="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-3">
+                        <span class="w-7 h-7 bg-orange-500 rounded-full flex items-center justify-center text-white text-sm font-bold">${index + 1}</span>
+                        <span class="text-white flex-1 text-sm truncate">${addr.address}</span>
+                    </div>
+                `).join('')}
+            `;
+
+            // Show stats
+            document.getElementById('routeStats').classList.remove('hidden');
+            document.getElementById('totalDistance').textContent = `${totalDistance.toFixed(1)} км`;
+            const timeMinutes = Math.round((totalDistance / 20) * 60 + optimizedAddresses.length * 5);
+            const hours = Math.floor(timeMinutes / 60);
+            const mins = timeMinutes % 60;
+            document.getElementById('totalTime').textContent = hours > 0 ? `${hours}ч ${mins}м` : `${mins} мин`;
+
+            // Update address list with new order
+            updateAddressList();
+        }
+
+        // Initialize speech recognition on load
+        document.addEventListener('DOMContentLoaded', () => {
+            initSpeechRecognition();
+        });
+    </script>
+</body>
+</html>
